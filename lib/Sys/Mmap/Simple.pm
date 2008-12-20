@@ -8,11 +8,11 @@ use base   qw/Exporter DynaLoader/;
 use Symbol qw/qualify_to_ref/;
 use Carp   qw/croak/;
 
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 
-our @EXPORT_OK = qw/map_handle map_file map_anonymous sync unmap/;
+our @EXPORT_OK = qw/map_handle map_file map_anonymous sync locked unmap/;
 
-bootstrap Sys::Mmap::Simple;
+bootstrap Sys::Mmap::Simple $VERSION;
 
 sub map_handle(\$*@) {
 	my ($var_ref, $glob, $writable) = @_;
@@ -76,31 +76,35 @@ This module maps files to Perl variables. There are a few differences between th
 
 =head1 FUNCTIONS
 
-The following functions are defined and availible for exportation. All of them take an lvalue as first argument.
+The following functions are defined and availible for exportation.
 
-=head2 * map_handle($scalar, *handle, $writable) 
+=head2 map_handle $variable, *handle, $writable = 0
 
-Use a filehandle to mmap into a variable. *handle may be filehandle or a reference to a filehandle. C<$writable> is optional and defaults to 0.
+Use a filehandle to mmap into a variable. $variable must be an lvalue. *handle may be filehandle or a reference to a filehandle.
 
-=head2 * map_file($scalar, $filename, $writable)
+=head2 map_file $variable, $filename, $writable = 0
 
-Open a file and mmap it into a variable. C<$writable> is optional and defaults to 0.
+Open a file and mmap it into a variable. $variable must be an lvalue.
 
-=head2 * map_anonymous($scalar, $length)
+=head2 map_anonymous $variable, $length
 
 Map an anonymous piece of memory.
 
-=head2 * sync($scalar)
+=head2 sync $variable
 
 Flush changes made to the memory map back to disk.
 
-=head2 * unmap($scalar)
+=head2 locked { block } $variable
+
+Perform an action while keeping a thread lock on the map. The map is accessable as C<$_>. This is only useful when using threads.
+
+=head2 unmap $scalar
 
 Unmap a variable. Note that normally this is not necessary, but it is included for completeness.
 
 =head1 DIAGNOSTICS
 
-If you C<use warnings>, this module will give warnings if the variable is improperly used (anything that changes its size). This can be turned of lexically by using C<no warnings 'substr'>.
+If you C<use warnings>, this module will give warnings if the variable is improperly used (anything that changes its size). This can be turned off lexically by using C<no warnings 'substr'>.
 
 Trying to sync or unmap a variable that hasn't been mapped will result in an exception.
 

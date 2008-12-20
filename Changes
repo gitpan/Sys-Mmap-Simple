@@ -1,5 +1,10 @@
 Revision history for Sys-Mmap-Simple
 
-0.01    Date/time
+0.02    2008-12-20
+        Added locked
+        Improved diagnostics.
+        Fixed documentation.
+
+0.01    2008-12-19
         First version, released on an unsuspecting world.
 

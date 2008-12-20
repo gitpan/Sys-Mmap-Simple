@@ -1,13 +1,12 @@
 Sys::Mmap::Simple
 
-This module maps files to perl variables. There are a few differences between this module and Sys::Mmap.
- * It will automatically unmap the file when the scalar gets destroyed.
- * This module is safe yet fast. Sys::Mmap offers two interfaces, one throwing segfaults when used improperly, the other (based on ties) is safe
-but reportedly 10 times slower. Sys::Mmap::Simple will give a friendly warning when doing something wrong, but when properly used it isn’t any
-slower that any other string.
- * It always maps the whole file, and always does shared mapping. This seems to be what people want in 95% of all cases.
+This module maps files to Perl variables. There are a few differences between this module and Sys::Mmap.
 
-This is an early release. There are likely to be bugs.
+* It offers a more simple interface. It always maps the whole file, and always does shared mapping. This seems to be what people want in 95% of all cases.
+* This module is safe yet fast. Sys::Mmap offers two interfaces, one is fast, but can segfault if not used correctly. The other is safe, but reportedly 10 times slower. Sys::Mmap::Simple is fast (as long as it is used properly) and safe.
+* It will automatically unmap the file when the scalar gets destroyed.
+
+This is an early release. There are likely to be bugs. Also I can't guarantee API stability yet.
 
 INSTALLATION
 
