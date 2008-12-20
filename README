@@ -1,0 +1,49 @@
+Sys::Mmap::Simple
+
+This module maps files to perl variables. There are a few differences between this module and Sys::Mmap.
+ * It will automatically unmap the file when the scalar gets destroyed.
+ * This module is safe yet fast. Sys::Mmap offers two interfaces, one throwing segfaults when used improperly, the other (based on ties) is safe
+but reportedly 10 times slower. Sys::Mmap::Simple will give a friendly warning when doing something wrong, but when properly used it isn’t any
+slower that any other string.
+ * It always maps the whole file, and always does shared mapping. This seems to be what people want in 95% of all cases.
+
+This is an early release. There are likely to be bugs.
+
+INSTALLATION
+
+To install this module, run the following commands:
+
+	perl Build.PL
+	./Build
+	./Build test
+	./Build install
+
+SUPPORT AND DOCUMENTATION
+
+After installing, you can find documentation for this module with the
+perldoc command.
+
+    perldoc Sys::Mmap::Simple
+
+You can also look for information at:
+
+    RT, CPAN's request tracker
+        http://rt.cpan.org/NoAuth/Bugs.html?Dist=Sys-Mmap-Simple
+
+    AnnoCPAN, Annotated CPAN documentation
+        http://annocpan.org/dist/Sys-Mmap-Simple
+
+    CPAN Ratings
+        http://cpanratings.perl.org/d/Sys-Mmap-Simple
+
+    Search CPAN
+        http://search.cpan.org/dist/Sys-Mmap-Simple
+
+
+COPYRIGHT AND LICENCE
+
+Copyright (C) 2008 Leon Timmermans
+
+This program is free software; you can redistribute it and/or modify it
+under the same terms as Perl itself.
+

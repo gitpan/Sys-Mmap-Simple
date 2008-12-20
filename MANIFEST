@@ -1,0 +1,11 @@
+Build.PL
+Changes
+MANIFEST
+README
+lib/Sys/Mmap/Simple.pm
+lib/Sys/Mmap/Simple.xs
+t/00-load.t
+t/pod-coverage.t
+t/pod.t
+Makefile.PL
+META.yml
