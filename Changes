@@ -1,5 +1,8 @@
 Revision history for Sys-Mmap-Simple
 
+0.03    2008-12-21
+        Improved portability
+
 0.02    2008-12-20
         Added locked
         Improved diagnostics.

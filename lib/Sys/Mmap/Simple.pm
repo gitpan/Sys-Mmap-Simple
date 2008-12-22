@@ -8,7 +8,7 @@ use base   qw/Exporter DynaLoader/;
 use Symbol qw/qualify_to_ref/;
 use Carp   qw/croak/;
 
-our $VERSION = '0.02';
+our $VERSION = '0.03_1';
 
 our @EXPORT_OK = qw/map_handle map_file map_anonymous sync locked unmap/;
 

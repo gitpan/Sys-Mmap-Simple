@@ -8,6 +8,10 @@
 
 #define MMAP_MAGIC_NUMBER 0x4c54
 
+#ifndef MAP_ANONYMOUS
+#define MAP_ANONYMOUS MAP_ANON
+#endif
+
 struct mmap_info {
 	void* address;
 	U32 length;
@@ -21,11 +25,11 @@ static int mmap_write(pTHX_ SV* var, MAGIC* magic) {
 	struct mmap_info* info = (struct mmap_info*) magic->mg_ptr;
 	if (SvTYPE(var) < SVt_PV)
 		sv_upgrade(var, SVt_PV);
-	if (SvPVX_const(var) != info->address) {
+	if (SvPVX(var) != info->address) {
 		if (ckWARN(WARN_SUBSTR))
 			Perl_warn(aTHX_ "Writing directly to a to an mmaped file is not recommended");
 
-		Copy(SvPVX_const(var), info->address, MIN(SvLEN(var), info->length), char);
+		Copy(SvPVX(var), info->address, MIN(SvLEN(var), info->length), char);
 		SvPV_free(var);
 		SvPVX(var) = info->address;
 		SvLEN(var) = 0;
@@ -73,6 +77,7 @@ static int mmap_free(pTHX_ SV* var, MAGIC* magic) {
 }
 
 #ifdef USE_ITHREADS
+
 static int mmap_dup(pTHX_ MAGIC* magic, CLONE_PARAMS* param) {
 	struct mmap_info* info = (struct mmap_info*) magic->mg_ptr;
 	MUTEX_LOCK(&info->mutex);
@@ -88,9 +93,12 @@ static int mmap_dup(pTHX_ MAGIC* magic, CLONE_PARAMS* param) {
 		command;\
 		MUTEX_UNLOCK(&info->mutex);\
     } STMT_END
+
 #else
+
 #define TABLE_TAIL 
 #define LOCKED(info, command) command
+
 #endif
 
 static const MGVTBL mmap_read_table  = { 0, 0,          mmap_length, mmap_clear, mmap_free TABLE_TAIL };
@@ -201,11 +209,11 @@ locked(code, var_ref)
 		SV* var = SvRV(var_ref);
 		struct mmap_info* info = check_mmap_magic(aTHX_ var);
 		int count;
-		SV* backup = DEFSV;
+		SAVESPTR(DEFSV);
 		DEFSV = var;
 		PUSHMARK(SP);
 		LOCKED(info, count = call_sv(code, GIMME_V | G_EVAL));
-		DEFSV = backup;
 		if (SvTRUE(ERRSV))
 			Perl_croak(aTHX_ NULL);
 		XSRETURN(count);
+
