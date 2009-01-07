@@ -5,6 +5,7 @@ This module maps files to Perl variables. There are a few differences between th
 * It offers a more simple interface. It always maps the whole file, and always does shared mapping. This seems to be what people want in 95% of all cases.
 * This module is safe yet fast. Sys::Mmap offers two interfaces, one is fast, but can segfault if not used correctly. The other is safe, but reportedly 10 times slower. Sys::Mmap::Simple is fast (as long as it is used properly) and safe.
 * It will automatically unmap the file when the scalar gets destroyed.
+* It has built-in support for thread synchronization.
 
 This is an early release. There are likely to be bugs. Also I can't guarantee API stability yet.
 

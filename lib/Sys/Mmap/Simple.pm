@@ -8,11 +8,23 @@ use base   qw/Exporter DynaLoader/;
 use Symbol qw/qualify_to_ref/;
 use Carp   qw/croak/;
 
-our $VERSION = '0.03_1';
+BEGIN {
+	our $VERSION = '0.03_2';
 
-our @EXPORT_OK = qw/map_handle map_file map_anonymous sync locked unmap/;
+	our @EXPORT_OK = qw/map_handle map_file map_anonymous sync locked unmap/;
 
-bootstrap Sys::Mmap::Simple $VERSION;
+	our %EXPORT_TAGS = (
+		MAP       => [qw/map_handle map_file map_anonymous unmap/],
+	);
+
+	bootstrap Sys::Mmap::Simple $VERSION;
+
+	if (defined &condition_wait) {
+		my @cond_funcs = qw/condition_wait condition_signal condition_broadcast/;
+		push @EXPORT_OK, @cond_funcs;
+		$EXPORT_TAGS{CONDITION} = \@cond_funcs;
+	}
+}
 
 sub map_handle(\$*@) {
 	my ($var_ref, $glob, $writable) = @_;
@@ -68,39 +80,59 @@ This module maps files to Perl variables. There are a few differences between th
 
 =item * It offers a more simple interface. It always maps the whole file, and always does shared mapping. This seems to be what people want in 95% of all cases.
 
-=item * This module is safe yet fast. Sys::Mmap offers two interfaces, one is fast, but can segfault if not used correctly. The other is safe, but reportedly 10 times slower. Sys::Mmap::Simple is fast (as long as it is used properly) and safe.
+=item * This module is safe yet fast. Sys::Mmap offers two interfaces, one is fast, but can lose its cou segfault if not used correctly. The other is safe, but reportedly 10 times slower. Sys::Mmap::Simple is fast (as long as it is used properly) and safe.
 
 =item * It will automatically unmap the file when the scalar gets destroyed.
+
+=item * It has built-in support for thread synchronization. 
 
 =back
 
 =head1 FUNCTIONS
 
-The following functions are defined and availible for exportation.
+=head2 MAPPING
 
-=head2 map_handle $variable, *handle, $writable = 0
+The following functions for mapping a variable are availible for exportation. They all take an lvalue as their first argument.
 
-Use a filehandle to mmap into a variable. $variable must be an lvalue. *handle may be filehandle or a reference to a filehandle.
+=head3 map_handle $variable, *handle, $writable = 0
 
-=head2 map_file $variable, $filename, $writable = 0
+Use a filehandle to mmap into a variable. *handle may be filehandle or a reference to a filehandle.
 
-Open a file and mmap it into a variable. $variable must be an lvalue.
+=head3 map_file $variable, $filename, $writable = 0
 
-=head2 map_anonymous $variable, $length
+Open a file and mmap it into a variable.
+
+=head3 map_anonymous $variable, $length
 
 Map an anonymous piece of memory.
 
-=head2 sync $variable
+=head3 sync $variable
 
-Flush changes made to the memory map back to disk.
+Flush changes made to the memory map back to disk. Mappings are always synced when unmapped, so this is usually not necessary. 
 
-=head2 locked { block } $variable
-
-Perform an action while keeping a thread lock on the map. The map is accessable as C<$_>. This is only useful when using threads.
-
-=head2 unmap $scalar
+=head3 unmap $variable
 
 Unmap a variable. Note that normally this is not necessary, but it is included for completeness.
+
+=head2 LOCKING
+
+These locking functions provide thread based locking for the mapped region. The mapped region has an internal lock and condition variable. The condional functions can only be used in a locked block. If your perl has been compiled without thread support the condition functions will not be availible, and C<locked> will execute its block without locking.
+
+=head3 locked { block } $variable
+
+Perform an action while keeping a thread lock on the map. The map is accessable as C<$_>. It will return whatever its block returns.
+
+=head3 condition_wait { block }
+
+While the block is false, wait for signals.
+
+=head3 condition_signal
+
+This will signal to one listener that the map is availible.
+
+=head3 condition_broadcast
+
+This will signal to all listeners that the map is availible.
 
 =head1 DIAGNOSTICS
 
