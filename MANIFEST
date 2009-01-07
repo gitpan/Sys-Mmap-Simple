@@ -5,6 +5,8 @@ README
 lib/Sys/Mmap/Simple.pm
 lib/Sys/Mmap/Simple.xs
 t/00-load.t
+t/10-basics.t
+t/20-threads.t
 t/pod-coverage.t
 t/pod.t
 Makefile.PL

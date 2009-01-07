@@ -1,5 +1,8 @@
 Revision history for Sys-Mmap-Simple
 
+0.03_4  2009-01-07
+        Fixed testing
+
 0.03_3	2009-01-07
         Added remap on Linux
         Added Windows support

@@ -8,7 +8,7 @@ use base qw/Exporter DynaLoader/;
 use Symbol qw/qualify_to_ref/;
 use Carp qw/croak/;
 
-our $VERSION = '0.03_3';
+our $VERSION = '0.03_4';
 
 our (@EXPORT_OK, %EXPORT_TAGS);
 
