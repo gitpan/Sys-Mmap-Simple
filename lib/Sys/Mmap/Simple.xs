@@ -1,9 +1,8 @@
 #include <assert.h>
 #ifdef WIN32
-#include <winbase.h>
+#include <windows.h>
 #include <io.h>
 #define MAP_ANONYMOUS 0
-#define MAP_FAILED NULL
 #define ANONYMOUS_HANDLE INVALID_HANDLE_VALUE
 #else
 #include <sys/types.h>
@@ -26,7 +25,8 @@ struct mmap_info {
 	void* address;
 	size_t length;
 #ifdef USE_ITHREADS
-	perl_mutex mutex;
+	perl_mutex count_mutex;
+	perl_mutex data_mutex;
 	perl_cond cond;
 	int count;
 #endif
@@ -38,9 +38,11 @@ static void croak_sys(pTHX_ const char* format) {
 	DWORD last_error = GetLastError(); 
 
 	DWORD format_flags = FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS;
-	FormatMessage(format_flags, NULL, last_error, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPTSTR)&message, 0, NULL);
+	int length = FormatMessage(format_flags, NULL, last_error, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPTSTR)&message, 0, NULL);
+	if (message[length - 2] == '\r')
+		message[length - 2] =  '\0';
 
-	Perl_croak(aTHX_ format, pszMessage);
+	Perl_croak(aTHX_ format, message);
 
 	LocalFree(message);
 }
@@ -58,7 +60,7 @@ static int mmap_write(pTHX_ SV* var, MAGIC* magic) {
 		sv_upgrade(var, SVt_PV);
 	if (SvPVX(var) != info->address) {
 		if (ckWARN(WARN_SUBSTR))
-			Perl_warn(aTHX_ "Writing directly to a to a mmaped file is not recommended");
+			Perl_warn(aTHX_ "Writing directly to a to a memory mapped file is not recommended");
 
 		Copy(SvPVX(var), info->address, MIN(SvLEN(var), info->length), char);
 		SvPV_free(var);
@@ -83,20 +85,24 @@ static int mmap_clear(pTHX_ SV* var, MAGIC* magic) {
 
 static int mmap_free(pTHX_ SV* var, MAGIC* magic) {
 	struct mmap_info* info = (struct mmap_info*) magic->mg_ptr;
+	int count;
 #ifdef USE_ITHREADS
-	MUTEX_LOCK(&info->mutex);
-	--info->count;
-	MUTEX_UNLOCK(&info->mutex);
-	if (info->count == 0) {
+	MUTEX_LOCK(&info->count_mutex);
+	if (--info->count == 0) {
 		if (munmap(info->address, info->length) == -1)
 			croak_sys(aTHX_ "Could not munmap: %s");
 		COND_DESTROY(&info->cond);
-		MUTEX_DESTROY(&info->mutex);
+		MUTEX_DESTROY(&info->data_mutex);
+		MUTEX_UNLOCK(&info->count_mutex);
+		MUTEX_DESTROY(&info->count_mutex);
 		Safefree(info);
 	}
-	else if (msync(info->address, info->length, MS_SYNC) == -1)
-		croak_sys(aTHX_ "Could not msync: %s");
-#else  /* USE_ITHREADS */
+	else {
+		if (msync(info->address, info->length, MS_ASYNC) == -1)
+			croak_sys(aTHX_ "Could not msync: %s");
+		MUTEX_UNLOCK(&info->count_mutex);
+	}
+#else
 	if (munmap(info->address, info->length) == -1)
 		croak_sys(aTHX_ "Could not munmap: %s");
 	Safefree(info);
@@ -107,37 +113,23 @@ static int mmap_free(pTHX_ SV* var, MAGIC* magic) {
 }
 
 #ifdef USE_ITHREADS
-
 static int mmap_dup(pTHX_ MAGIC* magic, CLONE_PARAMS* param) {
 	struct mmap_info* info = (struct mmap_info*) magic->mg_ptr;
-	MUTEX_LOCK(&info->mutex);
+	MUTEX_LOCK(&info->count_mutex);
 	assert(info->count);
 	++info->count;
-	MUTEX_UNLOCK(&info->mutex);
+	MUTEX_UNLOCK(&info->count_mutex);
 	return 0;
 }
 #define TABLE_TAIL ,0, mmap_dup
-#define LOCKED(info, command)      \
-    STMT_START {                   \
-		MUTEX_LOCK(&info->mutex);  \
-		command;                   \
-		MUTEX_UNLOCK(&info->mutex);\
-    } STMT_END
-
 #else
-
 #define TABLE_TAIL 
-#define LOCKED(info, command) command
-
 #endif
 
 static const MGVTBL mmap_read_table  = { 0, 0,          mmap_length, mmap_clear, mmap_free TABLE_TAIL };
 static const MGVTBL mmap_write_table = { 0, mmap_write, mmap_length, mmap_clear, mmap_free TABLE_TAIL };
 
-static void mmap_impl(pTHX_ SV* var_ref, size_t length, int writable, int flags, int fd) {
-	void* address;
-	struct mmap_info* magical;
-
+static SV* check_new_variable(pTHX_ SV* var_ref) {
 	SV* var = SvRV(var_ref);
 	if (SvTYPE(var) > SVt_PVMG && SvTYPE(var) != SVt_PVLV)
 		Perl_croak(aTHX_ "Trying to map into a nonscalar!\n");
@@ -146,8 +138,11 @@ static void mmap_impl(pTHX_ SV* var_ref, size_t length, int writable, int flags,
 	if (SvPOK(var)) 
 		SvPV_free(var);
 	sv_upgrade(var, SVt_PV);
+	return var;
+}
 
-	{
+static void* do_mapping(pTHX_ size_t length, int writable, int flags, int fd) {
+	void* address;
 #ifdef WIN32
 	int prot = writable ? PAGE_READWRITE | SEC_COMMIT: PAGE_READONLY | SEC_COMMIT;
 	HANDLE mapping = CreateFileMapping(_osfhandle(fd), NULL, prot, 0, length, NULL);
@@ -155,44 +150,58 @@ static void mmap_impl(pTHX_ SV* var_ref, size_t length, int writable, int flags,
 		croak_sys(aTHX_ "Could not mmap: %s\n");
 	address = MapViewOfFile(mapping, writable ? FILE_MAP_WRITE : FILE_MAP_READ, 0, 0, length);
 	CloseHandle(mapping);
+	if (address == NULL)
 #else
 	int prot = writable ? PROT_READ | PROT_WRITE : PROT_READ;
 	address = mmap(0, length, prot, flags | MAP_SHARED, fd, 0);
-#endif
 	if (address == MAP_FAILED)
+#endif
 		croak_sys(aTHX_ "Could not mmap: %s\n");
-	}
+	return address;
+}
 
+static struct mmap_info* initialize_mmap_info(void* address, size_t length) {
+	struct mmap_info* magical;
 	New(0, magical, 1, struct mmap_info);
 	magical->address = address;
 	magical->length = length;
 #ifdef USE_ITHREADS
-	MUTEX_INIT(&magical->mutex);
+	MUTEX_INIT(&magical->count_mutex);
+	MUTEX_INIT(&magical->data_mutex);
 	COND_INIT(&magical->cond);
 	magical->count = 1;
 #endif
+	return magical;
+}
 
-	SvPVX(var) = address;
-	SvLEN(var) = 0;
-	SvCUR(var) = length;
-	SvPOK_only(var);
-
-	{
+static void add_magic(pTHX_ SV* var, struct mmap_info* magical, int writable) {
 	const MGVTBL* table = writable ? &mmap_write_table : &mmap_read_table;
 	MAGIC* magic = sv_magicext(var, NULL, PERL_MAGIC_uvar, table, (const char*) magical, 0);
 	magic->mg_private = MMAP_MAGIC_NUMBER;
 #ifdef USE_ITHREADS
 	magic->mg_flags |= MGf_DUP;
 #endif
-	}
 	if (!writable)
 		SvREADONLY_on(var);
+}
+
+static void mmap_impl(pTHX_ SV* var_ref, size_t length, int writable, int flags, int fd) {
+	SV* var = check_new_variable(aTHX_ var_ref);
+	void* address = do_mapping(aTHX_ length, writable, flags, fd);
+	struct mmap_info* magical = initialize_mmap_info(address, length);
+
+	SvPVX(var) = address;
+	SvLEN(var) = 0;
+	SvCUR(var) = length;
+	SvPOK_only(var);
+
+	add_magic(aTHX_ var, magical, writable);
 }
 
 static struct mmap_info* get_mmap_magic(pTHX_ SV* var) {
 	MAGIC* magic;
 	if (!SvMAGICAL(var) || (magic = mg_find(var, PERL_MAGIC_uvar)) == NULL ||  magic->mg_private != MMAP_MAGIC_NUMBER)
-		Perl_croak(aTHX_ "This variable is not mmaped");
+		Perl_croak(aTHX_ "This variable is not memory mapped");
 	return (struct mmap_info*) magic->mg_ptr;
 }
 
@@ -203,9 +212,9 @@ PROTOTYPES: DISABLED
 SV*
 _mmap_impl(var_ref, length, writable, fd)
 	SV* var_ref;
-	int fd;
 	size_t length;
 	int writable;
+	int fd;
 	CODE:
 		mmap_impl(aTHX_ var_ref, length, writable, 0, fd);
 		ST(0) = &PL_sv_yes;
@@ -265,31 +274,37 @@ locked(code, var_ref)
 	PPCODE:
 		SV* var = SvRV(var_ref);
 		struct mmap_info* info = get_mmap_magic(aTHX_ var);
-		int count;
 		
 		SAVESPTR(DEFSV);
 		DEFSV = var;
 		PUSHMARK(SP);
-		LOCKED(info, count = call_sv(code, GIMME_V | G_EVAL));
+#ifdef USE_ITHREADS
+		MUTEX_LOCK(&info->data_mutex);
+		call_sv(code, GIMME_V | G_EVAL);
+		MUTEX_UNLOCK(&info->data_mutex);
+		SPAGAIN;
 		if (SvTRUE(ERRSV))
 			Perl_croak(aTHX_ NULL);
-		XSRETURN(count);
+#else
+		call_sv(code, GIMME_V);
+		SPAGAIN;
+#endif
 
 #ifdef USE_ITHREADS
-SV*
+void
 condition_wait(condition)
 	SV* condition;
 	PROTOTYPE: &
-	CODE:
+	PPCODE:
 		struct mmap_info* info = get_mmap_magic(aTHX_ DEFSV);
 		while (1) {
-			POPs;
 			PUSHMARK(SP);
-			assert(call_sv(condition, G_SCALAR) == 1);
+			call_sv(condition, G_SCALAR);
 			SPAGAIN;
-			if (SvTRUE(ST(0)))
+			if (SvTRUE(TOPs))
 				break;
-			COND_WAIT(&info->cond, &info->mutex);
+			POPs;
+			COND_WAIT(&info->cond, &info->data_mutex);
 		}
 
 void

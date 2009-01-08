@@ -1,5 +1,8 @@
 Revision history for Sys-Mmap-Simple
 
+0.03_5  2009-01-*
+        Fixed race conditions
+
 0.03_4  2009-01-07
         Fixed testing
 

@@ -8,7 +8,7 @@ use base qw/Exporter DynaLoader/;
 use Symbol qw/qualify_to_ref/;
 use Carp qw/croak/;
 
-our $VERSION = '0.03_4';
+our $VERSION = '0.03_5';
 
 our (@EXPORT_OK, %EXPORT_TAGS);
 
@@ -30,7 +30,7 @@ while (my ($category, $values) = each %export_data) {
 sub map_handle(\$*@) {
 	my ($var_ref, $glob, $writable) = @_;
 	my $fh = qualify_to_ref($glob, caller);
-	return _mmap_wrapper($var_ref, -s $fh, $writable ? $writable : 0, fileno $fh);
+	return _mmap_wrapper($var_ref, -s $fh, defined $writable ? $writable : 0, fileno $fh);
 }
 
 sub map_file(\$@) {
@@ -68,7 +68,7 @@ Version 0.03
 
  use Sys::Mmap::Simple 'map_file';
  
- map_file(my $mmap, $filename);
+ map_file my $mmap, $filename;
  if ($mmap eq "foobar") {
      $mmap =~ s/bar/quz/g;
  }
@@ -79,11 +79,11 @@ This module maps files to Perl variables. There are a few differences between th
 
 =over 4
 
-=item * It offers a more simple interface targeted at common usage patterns: It always maps the whole file, and always does shared mapping. This seems to be what people want in almost all cases.
+=item * It offers a more simple interface targeted at common usage patterns: it always maps the whole file, and always does shared mapping. This seems to be what people want in almost all cases.
 
 =item * It is portable, supporting not only unix but also windows.
 
-=item * This module is safe yet fast. Sys::Mmap offers two interfaces, one is fast, but can cause segfault or loose the mapping if not used correctly. The other is safe, but reportedly 10 times slower. Sys::Mmap::Simple is fast (as long as it is used properly) and safe.
+=item * This module is safe yet fast. Sys::Mmap offers two interfaces, one is fast, but can cause segfaults or loose the mapping if not used correctly. The other is safe, but reportedly 10 times slower. Sys::Mmap::Simple is fast (as long as it is used properly) and safe.
 
 =item * It will automatically unmap the file when the scalar gets destroyed.
 
@@ -111,7 +111,7 @@ Map an anonymous piece of memory.
 
 =head3 sync $variable
 
-Flush changes made to the memory map back to disk. Mappings are always synced when unmapped, so this is usually not necessary. 
+Flush changes made to the memory map back to disk. Mappings are always flushed when unmapped, so this is usually not necessary. If your operating system supports it, the flushing will be done synchronously.
 
 =head3 remap $variable, $new_size
 
