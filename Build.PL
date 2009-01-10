@@ -10,6 +10,7 @@ my $builder = Module::Build->new(
 	dist_version_from  => 'lib/Sys/Mmap/Simple.pm',
 	build_requires => {
 		perl           => 5.007003,
+		'Module::Build'=> 0,
 		'Test::More'   => 0,
 		'IO::Handle'   => 0,
 		threads        => 1.34,

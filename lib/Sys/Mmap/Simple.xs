@@ -4,14 +4,19 @@
 #include <io.h>
 #define MAP_ANONYMOUS 0
 #define ANONYMOUS_HANDLE INVALID_HANDLE_VALUE
+typedef HANDLE handle_t;
 #else
 #include <sys/types.h>
 #include <sys/mman.h>
 #define ANONYMOUS_HANDLE -1
+typedef int handle_t;
 #endif
 
 #ifndef MAP_ANONYMOUS
 #define MAP_ANONYMOUS MAP_ANON
+#endif
+#ifndef MIN
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
 #endif
 
 #define PERL_NO_GET_CONTEXT
@@ -145,7 +150,7 @@ static void* do_mapping(pTHX_ size_t length, int writable, int flags, int fd) {
 	void* address;
 #ifdef WIN32
 	int prot = writable ? PAGE_READWRITE | SEC_COMMIT: PAGE_READONLY | SEC_COMMIT;
-	HANDLE mapping = CreateFileMapping(_osfhandle(fd), NULL, prot, 0, length, NULL);
+	HANDLE mapping = CreateFileMapping(_get_osfhandle(fd), NULL, prot, 0, length, NULL);
 	if (mapping == NULL)
 		croak_sys(aTHX_ "Could not mmap: %s\n");
 	address = MapViewOfFile(mapping, writable ? FILE_MAP_WRITE : FILE_MAP_READ, 0, 0, length);
@@ -185,7 +190,7 @@ static void add_magic(pTHX_ SV* var, struct mmap_info* magical, int writable) {
 		SvREADONLY_on(var);
 }
 
-static void mmap_impl(pTHX_ SV* var_ref, size_t length, int writable, int flags, int fd) {
+static void mmap_impl(pTHX_ SV* var_ref, size_t length, int writable, int flags, handle_t fd) {
 	SV* var = check_new_variable(aTHX_ var_ref);
 	void* address = do_mapping(aTHX_ length, writable, flags, fd);
 	struct mmap_info* magical = initialize_mmap_info(address, length);
