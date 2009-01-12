@@ -1,4 +1,10 @@
 Revision history for Sys-Mmap-Simple
+0.06    2009-01-12
+        Made tests work with older versions of threads.
+        Added documentation
+
+0.05    2009-01-09
+        Fixed previous fix
 
 0.04    2009-01-09
         Fixed windows support
