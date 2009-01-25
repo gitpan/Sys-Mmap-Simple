@@ -1,12 +1,15 @@
 ---
 name: Sys-Mmap-Simple
-version: 0.07
+version: 0.08
 author:
   - 'Leon Timmermans <leont@cpan.org>'
 abstract: Memory mapping made simple and safe.
 license: perl
 resources:
+  bugtracker: http://rt.cpan.org/NoAuth/Bugs.html?Dist=Sys-Mmap-Simple
   license: http://dev.perl.org/licenses/
+configure_requires:
+  Module::Build: 0
 requires:
   perl: 5.007003
 build_requires:
@@ -14,12 +17,16 @@ build_requires:
   IO::Handle: 0
   Module::Build: 0
   Test::More: 0
+  Time::HiRes: 0
   threads: 0
 provides:
   Sys::Mmap::Simple:
     file: lib/Sys/Mmap/Simple.pm
-    version: 0.07
+    version: 0.08
 generated_by: Module::Build version 0.280801
 meta-spec:
   url: http://module-build.sourceforge.net/META-spec-v1.2.html
   version: 1.2
+keywords:
+  - mmap
+  - memory mapping

@@ -6,6 +6,7 @@ use Config;
 use Test::More $Config{useithreads} ? ( tests => 4 ) : ( skip_all => "No threading support enabled" );
 use threads;
 use Sys::Mmap::Simple qw/map_anonymous sync locked :CONDITION/;
+use Time::HiRes qw/sleep time/;
 
 map_anonymous my $variable, 1024;
 
@@ -29,7 +30,7 @@ my @list = locked {
 	my $start = time;
 	my $foo = condition_wait { substr($_, 0, 5) eq "Camel" };
 	is($foo, 1, '$foo == 1');
-	ok(time - $start > 1, "Two seconds must have passed");
+	cmp_ok(time - 0.2, '>', $start, "Must have waited");
 	is(substr($_, 0, 5), "Camel", 'Variable should contain "Camel"');
 	(1, 2, 3);
 } $variable;
@@ -38,7 +39,7 @@ is(@list, 3, "Length of list is 3");
 
 sub sleeper {
 	my $word = shift;
-	sleep 2;
+	sleep 0.5;
 	locked {
 		condition_signal;
 		substr $_, 0, 5, $word;

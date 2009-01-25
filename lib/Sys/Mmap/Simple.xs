@@ -1,3 +1,11 @@
+/*
+ * This software is copyright (c) 2008, 2009 by Leon Timmermans <leont@cpan.org>.
+ *
+ * This is free software; you can redistribute it and/or modify it under
+ * the same terms as perl itself.
+ *
+ */
+
 #include <assert.h>
 #ifdef WIN32
 #include <windows.h>
@@ -147,7 +155,7 @@ static void check_new_variable(pTHX_ SV* var) {
 static void* do_mapping(pTHX_ size_t length, int writable, int flags, int fd) {
 	void* address;
 #ifdef WIN32
-	int prot = writable ? PAGE_READWRITE | SEC_COMMIT: PAGE_READONLY | SEC_COMMIT;
+	int prot = writable ? PAGE_READWRITE | SEC_COMMIT : PAGE_READONLY | SEC_COMMIT;
 	HANDLE file = flags == MAP_ANONYMOUS ? INVALID_HANDLE_VALUE : _get_osfhandle(fd);
 	HANDLE mapping = CreateFileMapping(file, NULL, prot, 0, length, NULL);
 	if (mapping == NULL)

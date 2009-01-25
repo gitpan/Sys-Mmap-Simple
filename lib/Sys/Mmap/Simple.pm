@@ -1,4 +1,8 @@
 package Sys::Mmap::Simple;
+# This software is copyright (c) 2008, 2009 by Leon Timmermans <leont@cpan.org>.
+#
+# This is free software; you can redistribute it and/or modify it under
+# the same terms as perl itself.
 
 use 5.007003;
 use strict;
@@ -8,7 +12,7 @@ use base qw/Exporter DynaLoader/;
 use Symbol qw/qualify_to_ref/;
 use Carp qw/croak/;
 
-our $VERSION = '0.07';
+our $VERSION = '0.08';
 
 our (@EXPORT_OK, %EXPORT_TAGS);
 
@@ -37,7 +41,7 @@ while (my ($category, $values) = each %export_data) {
 sub map_handle(\$*@) {
 	my ($var_ref, $glob, $mode) = @_;
 	my $fh = qualify_to_ref($glob, caller);
-	return _mmap_wrapper($var_ref, -s $fh, $writable_for{$mode || '<'}, fileno $fh);
+	return _mmap_wrapper($var_ref, -s $fh, $writable_for{ $mode || '<' }, fileno $fh);
 }
 
 sub map_file(\$@) {
@@ -69,7 +73,7 @@ Sys::Mmap::Simple - Memory mapping made simple and safe.
 
 =head1 VERSION
 
-Version 0.06
+Version 0.08
 
 =head1 SYNOPSIS
 
@@ -156,7 +160,7 @@ Unmap a variable. Note that normally this is not necessary, but it is included f
 
 =head2 Locking
 
-These locking functions provide locking for threads for the mapped region. The mapped region has an internal lock and condition variable. The conditonal functions can only be used inside a locked block. If your perl has been compiled without thread support the condition functions will not be availible, and C<locked> will execute its block without locking.
+These locking functions provide locking for threads for the mapped region. The mapped region has an internal lock and condition variable. The condition variable functions can only be used inside a locked block. If your perl has been compiled without thread support the condition functions will not be availible, and C<locked> will execute its block without locking.
 
 =head3 locked { block } $variable
 
@@ -178,7 +182,7 @@ This will signal to all listeners that the map is available.
 
 If you C<use warnings>, this module will give warnings if the variable is improperly used (anything that changes its size). This can be turned off lexically by using C<no warnings 'substr'>.
 
-Trying to sync, remap, unmap or lock a variable that hasn't been mapped will cause an exception to be thrown.
+If an error occurs in any of these functions, an exception will be thrown. In particular; trying to sync, remap, unmap or lock a variable that hasn't been mapped will cause an exception to be thrown.
 
 =head1 DEPENDENCIES
 
@@ -201,6 +205,8 @@ automatically be notified of progress on your bug as I make changes.
 =item * L<IPC::Mmap>, another mmap module
 
 =item * L<mmap(2)>. your mmap man page
+
+=item * CreateFileMapping at MSDN: L<http://msdn.microsoft.com/en-us/library/aa366537(VS.85).aspx>
 
 =back
 
