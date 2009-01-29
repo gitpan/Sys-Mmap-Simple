@@ -1,4 +1,5 @@
 package Sys::Mmap::Simple;
+
 # This software is copyright (c) 2008, 2009 by Leon Timmermans <leont@cpan.org>.
 #
 # This is free software; you can redistribute it and/or modify it under
@@ -12,7 +13,7 @@ use base qw/Exporter DynaLoader/;
 use Symbol qw/qualify_to_ref/;
 use Carp qw/croak/;
 
-our $VERSION = '0.08';
+our $VERSION = '0.09';
 
 our (@EXPORT_OK, %EXPORT_TAGS);
 
@@ -26,29 +27,33 @@ my %writable_for = (
 );
 
 my %export_data = (
-	MAP       => [qw/map_handle map_file map_anonymous remap unmap/],
-	EXTRA     => [qw/sync locked/],
-	CONDITION => [qw/condition_wait condition_signal condition_broadcast/],
+	MAP   => [qw/map_handle map_file map_anonymous unmap/],
+	EXTRA => [qw/remap sync pin unpin/],
+	LOCK  => [qw/locked condition_wait condition_signal condition_broadcast/],
 );
 
-while (my ($category, $values) = each %export_data) {
-	for my $function (grep { defined &{$_} } @{$values}) {
+while (my ($category, $functions) = each %export_data) {
+	for my $function (grep { defined &{$_} } @{$functions}) {
 		push @EXPORT_OK, $function;
 		push @{ $EXPORT_TAGS{$category} }, $function;
 	}
 }
 
 sub map_handle(\$*@) {
-	my ($var_ref, $glob, $mode) = @_;
+	my ($var_ref, $glob, $mode, $offset, $length) = @_;
 	my $fh = qualify_to_ref($glob, caller);
-	return _mmap_wrapper($var_ref, -s $fh, $writable_for{ $mode || '<' }, fileno $fh);
+	$offset ||= 0;
+	$length ||= (-s $fh) - $offset;
+	return _mmap_wrapper($var_ref, $length, $writable_for{ $mode || '<' }, fileno $fh, $offset);
 }
 
 sub map_file(\$@) {
-	my ($var_ref, $filename, $mode) = @_;
-	$mode ||= '<';
+	my ($var_ref, $filename, $mode, $offset, $length) = @_;
+	$mode   ||= '<';
+	$offset ||= 0;
 	open my $fh, $mode, $filename or croak "Couldn't open file $filename: $!";
-	my $ret = _mmap_wrapper($var_ref, -s $fh, $writable_for{$mode}, fileno $fh);
+	$length ||= (-s $fh) - $offset;
+	my $ret = _mmap_wrapper($var_ref, $length, $writable_for{$mode}, fileno $fh, $offset);
 	close $fh or croak "Couldn't close $filename: $!";
 	return $ret;
 }
@@ -73,7 +78,7 @@ Sys::Mmap::Simple - Memory mapping made simple and safe.
 
 =head1 VERSION
 
-Version 0.08
+Version 0.09
 
 =head1 SYNOPSIS
 
@@ -102,11 +107,13 @@ Sys::Mmap::Simple maps files or anonymous memory into perl variables.
 
 =head2 Advantages of this module over other similar modules
 
-=head3 Safety and Speed
+=over 4
+
+=item * Safety and Speed
 
 This module is safe yet fast. Alternatives are either fast but can cause segfaults or loose the mapping when not used correctly, or are safe but rather slow. Sys::Mmap::Simple is as fast as a normal string yet safe.
 
-=head3 Simplicity
+=item * Simplicity
 
 It offers a more simple interface targeted at common usage patterns
 
@@ -120,13 +127,15 @@ It offers a more simple interface targeted at common usage patterns
 
 =back
 
-=head3 Portability
+=item * Portability
 
 Sys::Mmap::Simple supports both Unix and Windows.
 
-=head3 Thread synchronization
+=item * Thread synchronization
 
 It has built-in support for thread synchronization. 
+
+=back
 
 =head1 FUNCTIONS
 
@@ -134,55 +143,91 @@ It has built-in support for thread synchronization.
 
 The following functions for mapping a variable are available for exportation. They all take an lvalue as their first argument.
 
-=head3 map_handle $variable, *handle, $mode = '<'
+=over 4
 
-Use a filehandle to mmap into a variable. *handle may be a bareword, constant, scalar expression, typeglob, or a reference to a typeglob. $mode uses the same format as L<open> does.
+=item * map_handle $lvalue, *handle, $mode = '<', $offset = 0, $length = -s(*handle) - $offset
 
-=head3 map_file $variable, $filename, $mode = '<'
+Use a filehandle to mmap into an lvalue. *handle may be a bareword, constant, scalar expression, typeglob, or a reference to a typeglob. $mode uses the same format as C<open> does. $offset and $length are byte positions in the file.
 
-Open a file and mmap it into a variable.
+=item * map_file $lvalue, $filename, $mode = '<', $length = -s($filename) - $offset
 
-=head3 map_anonymous $variable, $length
+Open a file and mmap it into an lvalue. $offset and $length are byte positions in the file.
+
+=item * map_anonymous $lvalue, $length
 
 Map an anonymous piece of memory.
 
-=head3 sync $variable, $synchronous = 1
+=item * sync $lvalue, $synchronous = 1
 
 Flush changes made to the memory map back to disk. Mappings are always flushed when unmapped, so this is usually not necessary. If $synchronous is true and your operating system supports it, the flushing will be done synchronously.
 
-=head3 remap $variable, $new_size
+=item * remap $lvalue, $new_size
 
-Try to remap $variable to a new size. It may fail if there is not sufficient space to expand a mapping at its current location. This call is linux specific and currently not supported or even defined on other systems.
+Try to remap $lvalue to a new size. It may fail if there is not sufficient space to expand a mapping at its current location. This call is linux specific and currently not supported or even defined on other systems.
 
-=head3 unmap $variable
+=item * unmap $lvalue
 
 Unmap a variable. Note that normally this is not necessary, but it is included for completeness.
 
+=item * pin $lvalue
+
+Disable paging for this map, thus locking it in physical memory. Depending on your operating system there may be limits on pinning.
+
+=item * unpin $lvalue
+
+Unlock the map from physical memory.
+
+=back
+
 =head2 Locking
 
-These locking functions provide locking for threads for the mapped region. The mapped region has an internal lock and condition variable. The condition variable functions can only be used inside a locked block. If your perl has been compiled without thread support the condition functions will not be availible, and C<locked> will execute its block without locking.
+These locking functions provide locking for threads for the mapped region. The mapped region has an internal lock and condition variable. The condition variable functions can only be used inside a locked block. If your perl has been compiled without thread support the condition functions will not be available, and C<locked> will execute its block without locking.
 
-=head3 locked { block } $variable
+=over 4
+
+=item * locked { block } $lvalue
 
 Perform an action while keeping a thread lock on the map. The map is accessible as C<$_>. It will return whatever its block returns.
 
-=head3 condition_wait { block }
+=item * condition_wait { block }
 
 Wait for block to become true. After every failed try, wait for a signal. It returns the value returned by the block.
 
-=head3 condition_signal
+=item * condition_signal
 
 This will signal to one listener that the map is available.
 
-=head3 condition_broadcast
+=item * condition_broadcast
 
 This will signal to all listeners that the map is available.
+
+=back
+
+=head1 EXPORTS
+
+All previously mentioned functions are availible for exportation, but none are exported by default. Some functions may not be availible on your OS or your version of perl as specified above. A number of tags are defined to make importation easier.
+
+=over 4
+
+=item * MAP
+
+map_handle, map_file, map_anonymous, unmap
+
+=item * EXTRA
+
+remap, sync, pin, unpin
+
+=item * LOCK
+
+locked, condition_wait, condition_signal, condition_broadcast
+
+=back
 
 =head1 DIAGNOSTICS
 
 If you C<use warnings>, this module will give warnings if the variable is improperly used (anything that changes its size). This can be turned off lexically by using C<no warnings 'substr'>.
 
-If an error occurs in any of these functions, an exception will be thrown. In particular; trying to sync, remap, unmap or lock a variable that hasn't been mapped will cause an exception to be thrown.
+If an error occurs in any of these functions, an exception will be thrown. In particular; trying to sync, remap, unmap, pin, unpin or lock a variable that hasn't been mapped will cause an exception to be thrown.
 
 =head1 DEPENDENCIES
 

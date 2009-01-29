@@ -1,6 +1,6 @@
 ---
 name: Sys-Mmap-Simple
-version: 0.08
+version: 0.09
 author:
   - 'Leon Timmermans <leont@cpan.org>'
 abstract: Memory mapping made simple and safe.
@@ -16,13 +16,15 @@ build_requires:
   ExtUtils::CBuilder: 0
   IO::Handle: 0
   Module::Build: 0
+  Test::Exception: 0
   Test::More: 0
+  Test::Warn: 0
   Time::HiRes: 0
   threads: 0
 provides:
   Sys::Mmap::Simple:
     file: lib/Sys/Mmap/Simple.pm
-    version: 0.08
+    version: 0.09
 generated_by: Module::Build version 0.280801
 meta-spec:
   url: http://module-build.sourceforge.net/META-spec-v1.2.html

@@ -1,5 +1,9 @@
 Revision history for Sys-Mmap-Simple
 
+0.09    2009-10-28
+        Added offset support
+        Fixed memory leak when throwing an exception on Windows
+
 0.08    2009-01-21
         Hopefully fixed false negatives in t/20-threads
         Added license information to all source files

@@ -5,7 +5,7 @@ use warnings;
 use Config;
 use Test::More $Config{useithreads} ? ( tests => 4 ) : ( skip_all => "No threading support enabled" );
 use threads;
-use Sys::Mmap::Simple qw/map_anonymous sync locked :CONDITION/;
+use Sys::Mmap::Simple qw/map_anonymous sync locked :LOCK/;
 use Time::HiRes qw/sleep time/;
 
 map_anonymous my $variable, 1024;
