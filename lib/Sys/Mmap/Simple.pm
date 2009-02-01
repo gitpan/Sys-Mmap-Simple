@@ -13,21 +13,21 @@ use base qw/Exporter DynaLoader/;
 use Symbol qw/qualify_to_ref/;
 use Carp qw/croak/;
 
-our $VERSION = '0.09';
+our $VERSION = '0.10';
 
-our (@EXPORT_OK, %EXPORT_TAGS);
+our (@EXPORT_OK, %EXPORT_TAGS, %MAP_CONSTANTS);
 
 bootstrap Sys::Mmap::Simple $VERSION;
 
-my %writable_for = (
-	'<'  => 0,
-	'+<' => 1,
-	'>'  => 1,
-	'+>' => 1,
-);
+while (my ($name, $value) = each %MAP_CONSTANTS) {
+	no strict 'refs';
+	*{$name} = sub { return $value };
+	push @EXPORT_OK, $name;
+	push @{ $EXPORT_TAGS{MAP_CONSTANTS} }, $name;
+}
 
 my %export_data = (
-	MAP   => [qw/map_handle map_file map_anonymous unmap/],
+	MAP   => [qw/map_handle map_file map_anonymous unmap sys_map/],
 	EXTRA => [qw/remap sync pin unpin/],
 	LOCK  => [qw/locked condition_wait condition_signal condition_broadcast/],
 );
@@ -39,12 +39,23 @@ while (my ($category, $functions) = each %export_data) {
 	}
 }
 
+my %protection_for = (
+	'<'  => $MAP_CONSTANTS{PROT_READ},
+	'+<' => $MAP_CONSTANTS{PROT_READ} | $MAP_CONSTANTS{PROT_WRITE},
+	'>'  => $MAP_CONSTANTS{PROT_WRITE},
+	'+>' => $MAP_CONSTANTS{PROT_READ} | $MAP_CONSTANTS{PROT_WRITE},
+);
+
+## no critic ProhibitSubroutinePrototypes
+
+#These must be defined before sys_map, in order to ignore its prototype
+
 sub map_handle(\$*@) {
 	my ($var_ref, $glob, $mode, $offset, $length) = @_;
 	my $fh = qualify_to_ref($glob, caller);
 	$offset ||= 0;
 	$length ||= (-s $fh) - $offset;
-	return _mmap_wrapper($var_ref, $length, $writable_for{ $mode || '<' }, fileno $fh, $offset);
+	return sys_map($var_ref, $length, $protection_for{ $mode || '<' }, $MAP_CONSTANTS{MAP_SHARED}, $fh, $offset);
 }
 
 sub map_file(\$@) {
@@ -53,16 +64,25 @@ sub map_file(\$@) {
 	$offset ||= 0;
 	open my $fh, $mode, $filename or croak "Couldn't open file $filename: $!";
 	$length ||= (-s $fh) - $offset;
-	my $ret = _mmap_wrapper($var_ref, $length, $writable_for{$mode}, fileno $fh, $offset);
+	my $ret = sys_map($var_ref, $length, $protection_for{$mode}, $MAP_CONSTANTS{MAP_SHARED}, $fh, $offset);
 	close $fh or croak "Couldn't close $filename: $!";
 	return $ret;
 }
 
-sub _mmap_wrapper {
+sub map_anonymous(\$@) {
+	my ($var_ref, $length) = @_;
+	croak 'Zero length specified for anonymous map' if $length == 0;
+	return sys_map($var_ref, $length, $MAP_CONSTANTS{PROT_READ} | $MAP_CONSTANTS{PROT_WRITE}, $MAP_CONSTANTS{MAP_ANONYMOUS} | $MAP_CONSTANTS{MAP_SHARED});
+}
+
+sub sys_map(\$$$$*;$) {    ## no critic ProhibitManyArgs
+	my ($var_ref, $length, $protection, $flags, $glob, $offset) = @_;
+	my $fd = $flags & $MAP_CONSTANTS{MAP_ANONYMOUS} ? -1 : fileno qualify_to_ref($glob);
+	$offset ||= 0;
 	my $ret;
-	eval { $ret = _mmap_impl(@_) };
+	eval { $ret = _mmap_impl($var_ref, $length, $protection, $flags, $fd, $offset) };
 	if ($@) {
-		$@ =~ s/\n$//mx;
+		$@ =~ s/\n\z//mx;
 		croak $@;
 	}
 	return $ret;
@@ -78,7 +98,7 @@ Sys::Mmap::Simple - Memory mapping made simple and safe.
 
 =head1 VERSION
 
-Version 0.09
+Version 0.10
 
 =head1 SYNOPSIS
 
@@ -115,15 +135,15 @@ This module is safe yet fast. Alternatives are either fast but can cause segfaul
 
 =item * Simplicity
 
-It offers a more simple interface targeted at common usage patterns
+It offers a simple interface targeted at common usage patterns
 
 =over 4
 
 =item * Files are mapped into a variable that can be read just like any other variable, and it can be written to using standard Perl techniques such as regexps and C<substr>.
 
-=item * Files can be mapped using a set of simple functions. No weird constants or 6 argument functions.
+=item * Files can be mapped using a set of simple functions. There is no need to know weird constants or 6 arguments.
 
-=item * It will automatically unmap the file when the scalar gets destroyed. This works correctly even in multithreaded programs.
+=item * It will automatically unmap the file when the scalar gets destroyed. This works correctly even in multi-threaded programs.
 
 =back
 
@@ -149,13 +169,17 @@ The following functions for mapping a variable are available for exportation. Th
 
 Use a filehandle to mmap into an lvalue. *handle may be a bareword, constant, scalar expression, typeglob, or a reference to a typeglob. $mode uses the same format as C<open> does. $offset and $length are byte positions in the file.
 
-=item * map_file $lvalue, $filename, $mode = '<', $length = -s($filename) - $offset
+=item * map_file $lvalue, $filename, $mode = '<', $offset = 0, $length = -s($filename) - $offset
 
 Open a file and mmap it into an lvalue. $offset and $length are byte positions in the file.
 
 =item * map_anonymous $lvalue, $length
 
 Map an anonymous piece of memory.
+
+=item * sys_map $lvalue, $length, $prot, $flags, *handle, $offset = 0
+
+Low level map operation. It accepts the same constants as mmap does (except its first argument obviously). If you don't know how mmap works you probably shouldn't be using this.
 
 =item * sync $lvalue, $synchronous = 1
 
@@ -176,6 +200,34 @@ Disable paging for this map, thus locking it in physical memory. Depending on yo
 =item * unpin $lvalue
 
 Unlock the map from physical memory.
+
+=item * advise $lvalue, $advise
+
+Advise a certain memory usage pattern. This is not implemented on all operating systems, and may be a no-op. $advice is a string with one of the following values.
+
+=over 2
+
+=item * normal 
+
+Specifies that the application has no advice to give on its behavior with respect to the mapped variable. It is the default characteristic if no advice is given.
+
+=item * random
+
+Specifies that the application expects to access the mapped variable in a random order.
+
+=item * sequential
+
+Specifies that the application expects to access the mapped variable sequentially from start to end.
+
+=item * willneed
+
+Specifies that the application expects to access the mapped variable in the near future.
+
+=item * dontneed
+
+Specifies that the application expects that it will not access the mapped variable in the near future.
+
+=back
 
 =back
 
@@ -203,9 +255,19 @@ This will signal to all listeners that the map is available.
 
 =back
 
+=head2 CONSTANTS
+
+=over 4
+
+=item PROT_NONE, PROT_READ, PROT_WRITE, PROT_EXEC, MAP_ANONYMOUS, MAP_SHARED, MAP_PRIVATE, MAP_ANON, MAP_FILE
+
+These constants are used for sys_map. If you think you need them your mmap manpage will explain them, but in most cases you can skip sys_map altogether.
+
+=back
+
 =head1 EXPORTS
 
-All previously mentioned functions are availible for exportation, but none are exported by default. Some functions may not be availible on your OS or your version of perl as specified above. A number of tags are defined to make importation easier.
+All previously mentioned functions are available for exportation, but none are exported by default. Some functions may not be available on your OS or your version of perl as specified above. A number of tags are defined to make importation easier.
 
 =over 4
 
@@ -220,6 +282,10 @@ remap, sync, pin, unpin
 =item * LOCK
 
 locked, condition_wait, condition_signal, condition_broadcast
+
+=item * CONSTANTS
+
+PROT_NONE, PROT_READ, PROT_WRITE, PROT_EXEC, MAP_ANONYMOUS, MAP_SHARED, MAP_PRIVATE, MAP_ANON, MAP_FILE
 
 =back
 

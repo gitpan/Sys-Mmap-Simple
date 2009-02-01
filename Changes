@@ -1,8 +1,13 @@
 Revision history for Sys-Mmap-Simple
 
-0.09    2009-10-28
+0.10    2009-01-30
+        Added sys_map, for advanced functionality.
+        Fixed regression on Windows
+
+0.09    2009-01-28
         Added offset support
         Fixed memory leak when throwing an exception on Windows
+        Added unit tests for failures
 
 0.08    2009-01-21
         Hopefully fixed false negatives in t/20-threads

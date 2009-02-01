@@ -4,7 +4,7 @@ use strict;
 use warnings;
 use Sys::Mmap::Simple qw/:MAP locked sync/;
 use IO::Handle;
-use Test::More tests => 18;
+use Test::More tests => 19;
 use Test::Warn;
 
 open my $self, '<', $0 or die "Couldn't open self: $!";
@@ -50,4 +50,9 @@ locked { tr/r/t/ }  $mmaped;
 $slurped =~ tr/r/t/;
 
 is($mmaped, $slurped, "Translated");
+}
+
+{
+ok(map_anonymous(my $mmap, 4096), "mapped an anonymous piece of memory");
+
 }
