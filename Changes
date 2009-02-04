@@ -1,5 +1,8 @@
 Revision history for Sys-Mmap-Simple
 
+0.11    2009-02-04
+        Fixed 2 Bohr bugs in unit tests
+
 0.10    2009-01-30
         Added sys_map, for advanced functionality.
         Fixed regression on Windows

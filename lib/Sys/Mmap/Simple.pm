@@ -13,7 +13,7 @@ use base qw/Exporter DynaLoader/;
 use Symbol qw/qualify_to_ref/;
 use Carp qw/croak/;
 
-our $VERSION = '0.10';
+our $VERSION = '0.11';
 
 our (@EXPORT_OK, %EXPORT_TAGS, %MAP_CONSTANTS);
 
@@ -98,11 +98,11 @@ Sys::Mmap::Simple - Memory mapping made simple and safe.
 
 =head1 VERSION
 
-Version 0.10
+Version 0.11
 
 =head1 SYNOPSIS
 
- use Sys::Mmap::Simple 'map_file';
+ use Sys::Mmap::Simple ':MAP';
  
  map_file my $mmap, $filename;
  if ($mmap eq "foobar") {
@@ -298,6 +298,10 @@ If an error occurs in any of these functions, an exception will be thrown. In pa
 =head1 DEPENDENCIES
 
 This module does not have any dependencies on other modules.
+
+=head1 PITFALLS
+
+You probably don't want to use C<<<'>'>>>> as a mode. This does not give you reading permissions on many architectures, resulting in segmentation faults.
 
 =head1 BUGS AND LIMITATIONS
 

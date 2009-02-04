@@ -45,4 +45,7 @@ throws_ok { map_anonymous my $foo, 0 } qr/^Zero length specified for anonymous m
 
 throws_ok { &map_anonymous("foo", 1000) } qr/^Invalid argument! at /, 'Can\'t ignore prototypes';
 
-throws_ok { map_handle my $foo, STDIN } qr/^Could not mmap: /, 'Can\'t map STDIN';
+SKIP: {
+	skip "STDOUT is a file ", 1 if -f STDOUT;
+	throws_ok { map_handle my $foo, STDOUT } qr/^Could not mmap: /, 'Can\'t map STDOUT';
+}

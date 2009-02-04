@@ -35,7 +35,7 @@ $copy->autoflush(1);
 print $copy $slurped;
 
 {
-ok(map_handle(my $mmaped, $copy, '>'), "map succeeded");
+ok(map_handle(my $mmaped, $copy, '+<'), "map succeeded");
 ok(defined $mmaped,                  "mmaped is defined");
 ok( length $mmaped > 300,            "length of mmaped is big enough");
 is($mmaped, $slurped,                "slurped is mmaped");
