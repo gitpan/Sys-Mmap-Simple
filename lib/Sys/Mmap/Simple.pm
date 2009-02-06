@@ -13,7 +13,7 @@ use base qw/Exporter DynaLoader/;
 use Symbol qw/qualify_to_ref/;
 use Carp qw/croak/;
 
-our $VERSION = '0.11';
+our $VERSION = '0.12';
 
 our (@EXPORT_OK, %EXPORT_TAGS, %MAP_CONSTANTS);
 
@@ -23,12 +23,12 @@ while (my ($name, $value) = each %MAP_CONSTANTS) {
 	no strict 'refs';
 	*{$name} = sub { return $value };
 	push @EXPORT_OK, $name;
-	push @{ $EXPORT_TAGS{MAP_CONSTANTS} }, $name;
+	push @{ $EXPORT_TAGS{CONSTANTS} }, $name;
 }
 
 my %export_data = (
 	MAP   => [qw/map_handle map_file map_anonymous unmap sys_map/],
-	EXTRA => [qw/remap sync pin unpin/],
+	EXTRA => [qw/remap sync pin unpin advise/],
 	LOCK  => [qw/locked condition_wait condition_signal condition_broadcast/],
 );
 
@@ -48,14 +48,14 @@ my %protection_for = (
 
 ## no critic ProhibitSubroutinePrototypes
 
-#These must be defined before sys_map, in order to ignore its prototype
+#These must be defined before sys_map to ignore its prototype
 
 sub map_handle(\$*@) {
 	my ($var_ref, $glob, $mode, $offset, $length) = @_;
 	my $fh = qualify_to_ref($glob, caller);
 	$offset ||= 0;
 	$length ||= (-s $fh) - $offset;
-	return sys_map($var_ref, $length, $protection_for{ $mode || '<' }, $MAP_CONSTANTS{MAP_SHARED}, $fh, $offset);
+	return sys_map($var_ref, $length, $protection_for{ $mode || '<' }, $MAP_CONSTANTS{MAP_SHARED} | $MAP_CONSTANTS{MAP_FILE}, $fh, $offset);
 }
 
 sub map_file(\$@) {
@@ -64,7 +64,7 @@ sub map_file(\$@) {
 	$offset ||= 0;
 	open my $fh, $mode, $filename or croak "Couldn't open file $filename: $!";
 	$length ||= (-s $fh) - $offset;
-	my $ret = sys_map($var_ref, $length, $protection_for{$mode}, $MAP_CONSTANTS{MAP_SHARED}, $fh, $offset);
+	my $ret = sys_map($var_ref, $length, $protection_for{$mode}, $MAP_CONSTANTS{MAP_SHARED} | $MAP_CONSTANTS{MAP_FILE}, $fh, $offset);
 	close $fh or croak "Couldn't close $filename: $!";
 	return $ret;
 }
@@ -77,15 +77,12 @@ sub map_anonymous(\$@) {
 
 sub sys_map(\$$$$*;$) {    ## no critic ProhibitManyArgs
 	my ($var_ref, $length, $protection, $flags, $glob, $offset) = @_;
-	my $fd = $flags & $MAP_CONSTANTS{MAP_ANONYMOUS} ? -1 : fileno qualify_to_ref($glob);
+	my $fd = $flags & $MAP_CONSTANTS{MAP_ANONYMOUS} ? -1 : fileno qualify_to_ref($glob, caller);
 	$offset ||= 0;
-	my $ret;
-	eval { $ret = _mmap_impl($var_ref, $length, $protection, $flags, $fd, $offset) };
-	if ($@) {
+	return eval { _mmap_impl($var_ref, $length, $protection, $flags, $fd, $offset) } || do {
 		$@ =~ s/\n\z//mx;
 		croak $@;
-	}
-	return $ret;
+	};
 }
 
 1;
@@ -98,14 +95,14 @@ Sys::Mmap::Simple - Memory mapping made simple and safe.
 
 =head1 VERSION
 
-Version 0.11
+Version 0.12
 
 =head1 SYNOPSIS
 
  use Sys::Mmap::Simple ':MAP';
  
  map_file my $mmap, $filename;
- if ($mmap eq "foobar") {
+ if ($mmap ne "foobar") {
      $mmap =~ s/bar/quz/g;
  }
 
@@ -149,7 +146,7 @@ It offers a simple interface targeted at common usage patterns
 
 =item * Portability
 
-Sys::Mmap::Simple supports both Unix and Windows.
+Sys::Mmap::Simple supports both POSIX systems and Windows.
 
 =item * Thread synchronization
 
@@ -165,19 +162,19 @@ The following functions for mapping a variable are available for exportation. Th
 
 =over 4
 
-=item * map_handle $lvalue, *handle, $mode = '<', $offset = 0, $length = -s(*handle) - $offset
+=item * map_handle $lvalue, *filehandle, $mode = '<', $offset = 0, $length = -s(*handle) - $offset
 
-Use a filehandle to mmap into an lvalue. *handle may be a bareword, constant, scalar expression, typeglob, or a reference to a typeglob. $mode uses the same format as C<open> does. $offset and $length are byte positions in the file.
+Use a filehandle to mmap into an lvalue. *filehandle may be a bareword, constant, scalar expression, typeglob, or a reference to a typeglob. $mode uses the same format as C<open> does. $offset and $length are byte positions in the file, and default to mapping the whole file.
 
 =item * map_file $lvalue, $filename, $mode = '<', $offset = 0, $length = -s($filename) - $offset
 
-Open a file and mmap it into an lvalue. $offset and $length are byte positions in the file.
+Open a file and mmap it into an lvalue. Other than $filename, all arguments work as in map_handle.
 
 =item * map_anonymous $lvalue, $length
 
 Map an anonymous piece of memory.
 
-=item * sys_map $lvalue, $length, $prot, $flags, *handle, $offset = 0
+=item * sys_map $lvalue, $length, $protection, $flags, *filehandle, $offset = 0
 
 Low level map operation. It accepts the same constants as mmap does (except its first argument obviously). If you don't know how mmap works you probably shouldn't be using this.
 
@@ -187,7 +184,7 @@ Flush changes made to the memory map back to disk. Mappings are always flushed w
 
 =item * remap $lvalue, $new_size
 
-Try to remap $lvalue to a new size. It may fail if there is not sufficient space to expand a mapping at its current location. This call is linux specific and currently not supported or even defined on other systems.
+Try to remap $lvalue to a new size. It may fail if there is not sufficient space to expand a mapping at its current location. This call is linux specific and currently not supported on other systems.
 
 =item * unmap $lvalue
 
@@ -201,7 +198,7 @@ Disable paging for this map, thus locking it in physical memory. Depending on yo
 
 Unlock the map from physical memory.
 
-=item * advise $lvalue, $advise
+=item * advise $lvalue, $advice
 
 Advise a certain memory usage pattern. This is not implemented on all operating systems, and may be a no-op. $advice is a string with one of the following values.
 
@@ -273,11 +270,11 @@ All previously mentioned functions are available for exportation, but none are e
 
 =item * MAP
 
-map_handle, map_file, map_anonymous, unmap
+map_handle, map_file, map_anonymous, sys_map, unmap
 
 =item * EXTRA
 
-remap, sync, pin, unpin
+remap, sync, pin, unpin, advise
 
 =item * LOCK
 
@@ -293,19 +290,19 @@ PROT_NONE, PROT_READ, PROT_WRITE, PROT_EXEC, MAP_ANONYMOUS, MAP_SHARED, MAP_PRIV
 
 If you C<use warnings>, this module will give warnings if the variable is improperly used (anything that changes its size). This can be turned off lexically by using C<no warnings 'substr'>.
 
-If an error occurs in any of these functions, an exception will be thrown. In particular; trying to sync, remap, unmap, pin, unpin or lock a variable that hasn't been mapped will cause an exception to be thrown.
+If an error occurs in any of these functions, an exception will be thrown. In particular; trying to sync, remap, unmap, pin, unpin, advise or lock a variable that hasn't been mapped will cause an exception to be thrown.
 
 =head1 DEPENDENCIES
 
-This module does not have any dependencies on other modules.
+This module does not have any dependencies on non-standard modules.
 
 =head1 PITFALLS
 
-You probably don't want to use C<<<'>'>>>> as a mode. This does not give you reading permissions on many architectures, resulting in segmentation faults.
+You probably don't want to use C<E<gt>> as a mode. This does not give you reading permissions on many architectures, resulting in segmentation faults (more confusingly, it will work on some others).
 
 =head1 BUGS AND LIMITATIONS
 
-This is an early release. Bugs are likely. Bug reports are welcome.
+As any piece of software, bugs are likely to exist here. Bug reports are welcome.
 
 Please report any bugs or feature requests to C<bug-sys-mmap-simple at rt.cpan.org>, or through
 the web interface at L<http://rt.cpan.org/NoAuth/ReportBug.html?Queue=Sys-Mmap-Simple>.  I will be notified, and then you'll

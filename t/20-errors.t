@@ -5,7 +5,7 @@ use warnings;
 use bytes;
 
 use Sys::Mmap::Simple qw/:MAP locked sync/;
-use Test::More tests => 15;
+use Test::More tests => 17;
 use Test::Warn;
 use Test::Exception;
 
@@ -49,3 +49,7 @@ SKIP: {
 	skip "STDOUT is a file ", 1 if -f STDOUT;
 	throws_ok { map_handle my $foo, STDOUT } qr/^Could not mmap: /, 'Can\'t map STDOUT';
 }
+
+warning_like { $mmaped = "foo" } qr/^Writing directly to a to a memory mapped file is not recommended at /, 'Trying to make it shorter gives a warning';
+
+is(length $mmaped, length $slurped, '$mmaped and $slurped still have the same length');

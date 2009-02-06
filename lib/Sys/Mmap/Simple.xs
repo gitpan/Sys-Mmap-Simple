@@ -136,10 +136,15 @@ static size_t page_size() {
 
 #define PROT_ALL (PROT_READ | PROT_WRITE | PROT_EXEC)
 
+static void reset_var(SV* var, struct mmap_info* info) {
+	SvPVX(var) = info->fake_address;
+	SvLEN(var) = 0;
+	SvCUR(var) = info->fake_length;
+	SvPOK_only(var);
+}
+
 static int mmap_write(pTHX_ SV* var, MAGIC* magic) {
 	struct mmap_info* info = (struct mmap_info*) magic->mg_ptr;
-	if (SvTYPE(var) < SVt_PV)
-		sv_upgrade(var, SVt_PV);
 	if (SvPVX(var) != info->fake_address) {
 		if (ckWARN(WARN_SUBSTR)) {
 			Perl_warn(aTHX_ "Writing directly to a to a memory mapped file is not recommended");
@@ -147,12 +152,9 @@ static int mmap_write(pTHX_ SV* var, MAGIC* magic) {
 				Perl_warn(aTHX_ "Truncating new value to size of the memory map");
 		}
 
-		Copy(SvPVX(var), info->fake_address, MIN(SvLEN(var), info->fake_length), char);
+		Copy(SvPVX(var), info->fake_address, MIN(SvLEN(var) - 1, info->fake_length), char);
 		SvPV_free(var);
-		SvPVX(var) = info->fake_address;
-		SvLEN(var) = 0;
-		SvCUR(var) = info->fake_length;
-		SvPOK_only(var);
+		reset_var(var, info);
 	}
 	return 0;
 }
@@ -164,7 +166,6 @@ static U32 mmap_length(pTHX_ SV* var, MAGIC* magic) {
 
 static int mmap_free(pTHX_ SV* var, MAGIC* magic) {
 	struct mmap_info* info = (struct mmap_info*) magic->mg_ptr;
-	int count;
 #ifdef USE_ITHREADS
 	MUTEX_LOCK(&info->count_mutex);
 	if (--info->count == 0) {
@@ -200,13 +201,12 @@ static int mmap_dup(pTHX_ MAGIC* magic, CLONE_PARAMS* param) {
 	MUTEX_UNLOCK(&info->count_mutex);
 	return 0;
 }
-#define TABLE_TAIL ,0, mmap_dup
 #else
-#define TABLE_TAIL 
+#define mmap_dup 0
 #endif
 
-static const MGVTBL mmap_read_table  = { 0, 0,          mmap_length, mmap_free, mmap_free TABLE_TAIL };
-static const MGVTBL mmap_write_table = { 0, mmap_write, mmap_length, mmap_free, mmap_free TABLE_TAIL };
+static const MGVTBL mmap_read_table  = { 0, 0,          mmap_length, mmap_free, mmap_free, 0, mmap_dup };
+static const MGVTBL mmap_write_table = { 0, mmap_write, mmap_length, mmap_free, mmap_free, 0, mmap_dup };
 
 static void check_new_variable(pTHX_ SV* var) {
 	if (SvTYPE(var) > SVt_PVMG && SvTYPE(var) != SVt_PVLV)
@@ -254,13 +254,6 @@ static struct mmap_info* initialize_mmap_info(void* address, size_t length, ptrd
 	return magical;
 }
 
-static void set_var(pTHX_ SV* var, void* address, size_t length, ptrdiff_t correction) {
-	SvPVX(var) = address + correction;
-	SvLEN(var) = 0;
-	SvCUR(var) = length;
-	SvPOK_only(var);
-}
-
 static void add_magic(pTHX_ SV* var, struct mmap_info* magical, int writable) {
 	const MGVTBL* table = writable ? &mmap_write_table : &mmap_read_table;
 	MAGIC* magic = sv_magicext(var, NULL, PERL_MAGIC_uvar, table, (const char*) magical, 0);
@@ -272,7 +265,7 @@ static void add_magic(pTHX_ SV* var, struct mmap_info* magical, int writable) {
 		SvREADONLY_on(var);
 }
 
-static SV* get_var(pTHX_ SV* var_ref) {
+static SV* deref_var(pTHX_ SV* var_ref) {
 	if (!SvROK(var_ref))
 		Perl_croak(aTHX_ "Invalid argument!");
 	return SvRV(var_ref);
@@ -316,17 +309,17 @@ BOOT:
 #ifdef MADV_REMOVE
 	ADVISE_CONSTANT("remove", MADV_REMOVE);
 #endif
-#ifdef MADV_DONTFORKS
+#ifdef MADV_DONTFORK
 	ADVISE_CONSTANT("dontfork", MADV_DONTFORK);
 #endif
-#ifdef MADV_DOFORKS
+#ifdef MADV_DOFORK
 	ADVISE_CONSTANT("dofork", MADV_DOFORK);
 #endif
 #endif
 
 SV*
 _mmap_impl(var, length, prot, flags, fd, offset)
-	SV* var = get_var(aTHX_ ST(0));
+	SV* var = deref_var(aTHX_ ST(0));
 	size_t length;
 	int prot;
 	int flags;
@@ -339,67 +332,67 @@ _mmap_impl(var, length, prot, flags, fd, offset)
 		void* address = do_mapping(aTHX_ length + correction, prot, flags, fd, offset - correction);
 		
 		struct mmap_info* magical = initialize_mmap_info(address, length, correction);
-		set_var(aTHX_ var, address, length, correction);
+		reset_var(var, magical);
 		add_magic(aTHX_ var, magical, prot & PROT_WRITE);
-		ST(0) = &PL_sv_yes;
+		ST(0) = YES;
 
 SV*
 sync(var, sync = YES)
-	SV* var = get_var(aTHX_ ST(0));
+	SV* var = deref_var(aTHX_ ST(0));
 	SV* sync;
 	PROTOTYPE: \$@
 	CODE:
 		struct mmap_info* info = get_mmap_magic(aTHX_ var, "sync");
 		if (msync(info->real_address, info->real_length, SvTRUE(sync) ? MS_SYNC : MS_ASYNC ) == -1)
 			croak_sys(aTHX_ "Could not sync: %s");
-		ST(0) = &PL_sv_yes;
+		ST(0) = YES;
 
 #ifdef __linux__
 SV*
 remap(var, new_size)
-	SV* var = get_var(aTHX_ ST(0));
+	SV* var = deref_var(aTHX_ ST(0));
 	size_t new_size;
 	PROTOTYPE: \$@
 	CODE:
 		struct mmap_info* info = get_mmap_magic(aTHX_ var, "remap");
 		if (mremap(info->real_address, info->real_length, new_size + (info->real_length - info->fake_length), 0) == MAP_FAILED)
 			croak_sys(aTHX_ "Could not remap: %s");
-		ST(0) = &PL_sv_yes;
+		ST(0) = YES;
 
 #endif /* __linux__ */
 
 SV*
 unmap(var)
-	SV* var = get_var(aTHX_ ST(0));
+	SV* var = deref_var(aTHX_ ST(0));
 	PROTOTYPE: \$
 	CODE: 
 		get_mmap_magic(aTHX_ var, "unmap");
 		sv_unmagic(var, PERL_MAGIC_uvar);
-		ST(0) = &PL_sv_yes;
+		ST(0) = YES;
 
 SV*
 pin(var)
-	SV* var = get_var(aTHX_ ST(0));
+	SV* var = deref_var(aTHX_ ST(0));
 	PROTOTYPE: \$
 	CODE: 
 		struct mmap_info* info = get_mmap_magic(aTHX_ var, "pin");
 		if (mlock(info->real_address, info->real_length) == -1)
 			croak_sys(aTHX_ "Could not mlock: %s");
-		ST(0) = &PL_sv_yes;
+		ST(0) = YES;
 
 SV*
 unpin(var)
-	SV* var = get_var(aTHX_ ST(0));
+	SV* var = deref_var(aTHX_ ST(0));
 	PROTOTYPE: \$
 	CODE:
 		struct mmap_info* info = get_mmap_magic(aTHX_ var, "unpin");
 		if (munlock(info->real_address, info->real_length) == -1)
 			croak_sys(aTHX_ "Could not munlock: %s");
-		ST(0) = &PL_sv_yes;
+		ST(0) = YES;
 
 SV*
 advise(var, name)
-	SV* var = get_var(aTHX_ ST(0));
+	SV* var = deref_var(aTHX_ ST(0));
 	SV* name;
 	PROTOTYPE: \$@
 	CODE:
@@ -413,13 +406,13 @@ advise(var, name)
 		if (madvise(info->real_address, info->real_length, SvUV(HeVAL(value)) == -1))
 			croak_sys(aTHX_ "Could not madvice: %s");
 #endif
-		ST(0) = &PL_sv_yes;
+		ST(0) = YES;
 
 
 void
 locked(block, var)
 	SV* block;
-	SV* var = get_var(aTHX_ ST(1));
+	SV* var = deref_var(aTHX_ ST(1));
 	PROTOTYPE: &\$
 	PPCODE:
 		struct mmap_info* info = get_mmap_magic(aTHX_ var, "do locked");
