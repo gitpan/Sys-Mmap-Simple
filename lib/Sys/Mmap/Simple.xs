@@ -432,11 +432,11 @@ locked(block, var)
 
 #ifdef USE_ITHREADS
 void
-condition_wait(block)
+wait_until(block)
 	SV* block;
 	PROTOTYPE: &
 	PPCODE:
-		struct mmap_info* info = get_mmap_magic(aTHX_ DEFSV, "condition_wait");
+		struct mmap_info* info = get_mmap_magic(aTHX_ DEFSV, "wait_until");
 		while (1) {
 			PUSHMARK(SP);
 			call_sv(block, G_SCALAR | G_NOARGS);
@@ -448,17 +448,17 @@ condition_wait(block)
 		}
 
 void
-condition_signal()
+notify()
 	PROTOTYPE:
 	CODE:
-		struct mmap_info* info = get_mmap_magic(aTHX_ DEFSV, "condition_signal");
+		struct mmap_info* info = get_mmap_magic(aTHX_ DEFSV, "notify");
 		COND_SIGNAL(&info->cond);
 
 void
-condition_broadcast()
+broadcast()
 	PROTOTYPE:
 	CODE:
-		struct mmap_info* info = get_mmap_magic(aTHX_ DEFSV, "condition_broadcast");
+		struct mmap_info* info = get_mmap_magic(aTHX_ DEFSV, "broadcast");
 		COND_BROADCAST(&info->cond);
 
 #endif /* USE ITHREADS */

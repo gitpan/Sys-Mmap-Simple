@@ -1,5 +1,8 @@
 Revision history for Sys-Mmap-Simple
 
+0.13    2009-02-14
+        API break: renamed conditional functions, lowercased export tags
+
 0.12    2009-02-06
         Documentation updates
 

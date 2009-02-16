@@ -13,7 +13,7 @@ use base qw/Exporter DynaLoader/;
 use Symbol qw/qualify_to_ref/;
 use Carp qw/croak/;
 
-our $VERSION = '0.12';
+our $VERSION = '0.13';
 
 our (@EXPORT_OK, %EXPORT_TAGS, %MAP_CONSTANTS);
 
@@ -23,13 +23,13 @@ while (my ($name, $value) = each %MAP_CONSTANTS) {
 	no strict 'refs';
 	*{$name} = sub { return $value };
 	push @EXPORT_OK, $name;
-	push @{ $EXPORT_TAGS{CONSTANTS} }, $name;
+	push @{ $EXPORT_TAGS{constants} }, $name;
 }
 
 my %export_data = (
-	MAP   => [qw/map_handle map_file map_anonymous unmap sys_map/],
-	EXTRA => [qw/remap sync pin unpin advise/],
-	LOCK  => [qw/locked condition_wait condition_signal condition_broadcast/],
+	'map'  => [qw/map_handle map_file map_anonymous unmap sys_map/],
+	extra  => [qw/remap sync pin unpin advise page_size/],
+	'lock' => [qw/locked wait_until notify broadcast/],
 );
 
 while (my ($category, $functions) = each %export_data) {
@@ -95,7 +95,7 @@ Sys::Mmap::Simple - Memory mapping made simple and safe.
 
 =head1 VERSION
 
-Version 0.12
+Version 0.13
 
 =head1 SYNOPSIS
 
@@ -158,7 +158,7 @@ It has built-in support for thread synchronization.
 
 =head2 Mapping
 
-The following functions for mapping a variable are available for exportation. They all take an lvalue as their first argument.
+The following functions for mapping a variable are available for exportation. They all take an lvalue as their first argument, except page_size.
 
 =over 4
 
@@ -230,7 +230,7 @@ Specifies that the application expects that it will not access the mapped variab
 
 =head2 Locking
 
-These locking functions provide locking for threads for the mapped region. The mapped region has an internal lock and condition variable. The condition variable functions can only be used inside a locked block. If your perl has been compiled without thread support the condition functions will not be available, and C<locked> will execute its block without locking.
+These locking functions provide locking for threads for the mapped region. The mapped region has an internal lock and condition variable. The condition variable functions(C<wait_until>, C<notify>, C<broadcast>) can only be used inside a locked block. If your perl has been compiled without thread support the condition functions will not be available, and C<locked> will execute its block without locking.
 
 =over 4
 
@@ -238,15 +238,15 @@ These locking functions provide locking for threads for the mapped region. The m
 
 Perform an action while keeping a thread lock on the map. The map is accessible as C<$_>. It will return whatever its block returns.
 
-=item * condition_wait { block }
+=item * wait_until { block }
 
 Wait for block to become true. After every failed try, wait for a signal. It returns the value returned by the block.
 
-=item * condition_signal
+=item * notify
 
 This will signal to one listener that the map is available.
 
-=item * condition_broadcast
+=item * broadcast
 
 This will signal to all listeners that the map is available.
 
@@ -268,19 +268,19 @@ All previously mentioned functions are available for exportation, but none are e
 
 =over 4
 
-=item * MAP
+=item * map
 
 map_handle, map_file, map_anonymous, sys_map, unmap
 
-=item * EXTRA
+=item * extra
 
 remap, sync, pin, unpin, advise
 
-=item * LOCK
+=item * lock
 
-locked, condition_wait, condition_signal, condition_broadcast
+locked, wait_until, notify, broadcast
 
-=item * CONSTANTS
+=item * constants
 
 PROT_NONE, PROT_READ, PROT_WRITE, PROT_EXEC, MAP_ANONYMOUS, MAP_SHARED, MAP_PRIVATE, MAP_ANON, MAP_FILE
 
@@ -290,7 +290,7 @@ PROT_NONE, PROT_READ, PROT_WRITE, PROT_EXEC, MAP_ANONYMOUS, MAP_SHARED, MAP_PRIV
 
 If you C<use warnings>, this module will give warnings if the variable is improperly used (anything that changes its size). This can be turned off lexically by using C<no warnings 'substr'>.
 
-If an error occurs in any of these functions, an exception will be thrown. In particular; trying to sync, remap, unmap, pin, unpin, advise or lock a variable that hasn't been mapped will cause an exception to be thrown.
+If an error occurs in any of these functions, an exception will be thrown. In particular; trying to C<sync>, C<remap>, C<unmap>, C<pin>, C<unpin>, C<advise> or do C<locked> a variable that hasn't been mapped will cause an exception to be thrown.
 
 =head1 DEPENDENCIES
 

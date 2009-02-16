@@ -4,7 +4,7 @@ use strict;
 use warnings;
 use bytes;
 
-use Sys::Mmap::Simple qw/:MAP locked sync/;
+use Sys::Mmap::Simple qw/:map locked sync/;
 use Test::More tests => 17;
 use Test::Warn;
 use Test::Exception;
