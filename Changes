@@ -1,5 +1,8 @@
 Revision history for Sys-Mmap-Simple
 
+0.14    2009-06-18
+		Final version, please switch to File::Map
+
 0.13    2009-02-14
         API break: renamed conditional functions, lowercased export tags
 

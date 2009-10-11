@@ -1,88 +1,58 @@
 package Sys::Mmap::Simple;
 
-# This software is copyright (c) 2008, 2009 by Leon Timmermans <leont@cpan.org>.
-#
-# This is free software; you can redistribute it and/or modify it under
-# the same terms as perl itself.
-
-use 5.007003;
 use strict;
 use warnings;
 
-use base qw/Exporter DynaLoader/;
-use Symbol qw/qualify_to_ref/;
-use Carp qw/croak/;
+our $VERSION = 0.14;
 
-our $VERSION = '0.13';
+use File::Map 0.13 qw/:constants lock_map/;
+use Exporter 5.57 'import';
+use Symbol 'qualify_to_ref';
+use Sub::Prototype 0.02;
 
-our (@EXPORT_OK, %EXPORT_TAGS, %MAP_CONSTANTS);
+our @EXPORT_OK = grep !/lock_map/, @File::Map::EXPORT_OK, 'locked';
+our %EXPORT_TAGS = %File::Map::EXPORT_TAGS;
+@{ $EXPORT_TAGS{lock} } = qw/locked/;
 
-bootstrap Sys::Mmap::Simple $VERSION;
-
-while (my ($name, $value) = each %MAP_CONSTANTS) {
-	no strict 'refs';
-	*{$name} = sub { return $value };
-	push @EXPORT_OK, $name;
-	push @{ $EXPORT_TAGS{constants} }, $name;
-}
-
-my %export_data = (
-	'map'  => [qw/map_handle map_file map_anonymous unmap sys_map/],
-	extra  => [qw/remap sync pin unpin advise page_size/],
-	'lock' => [qw/locked wait_until notify broadcast/],
-);
-
-while (my ($category, $functions) = each %export_data) {
-	for my $function (grep { defined &{$_} } @{$functions}) {
-		push @EXPORT_OK, $function;
-		push @{ $EXPORT_TAGS{$category} }, $function;
+sub locked(&\$) {
+	my ($block, $var_ref) = @_;
+	for (${$var_ref}) {
+		lock_map $_;
+		return $block->();
 	}
 }
 
-my %protection_for = (
-	'<'  => $MAP_CONSTANTS{PROT_READ},
-	'+<' => $MAP_CONSTANTS{PROT_READ} | $MAP_CONSTANTS{PROT_WRITE},
-	'>'  => $MAP_CONSTANTS{PROT_WRITE},
-	'+>' => $MAP_CONSTANTS{PROT_READ} | $MAP_CONSTANTS{PROT_WRITE},
-);
-
-## no critic ProhibitSubroutinePrototypes
-
-#These must be defined before sys_map to ignore its prototype
-
 sub map_handle(\$*@) {
-	my ($var_ref, $glob, $mode, $offset, $length) = @_;
-	my $fh = qualify_to_ref($glob, caller);
-	$offset ||= 0;
-	$length ||= (-s $fh) - $offset;
-	return sys_map($var_ref, $length, $protection_for{ $mode || '<' }, $MAP_CONSTANTS{MAP_SHARED} | $MAP_CONSTANTS{MAP_FILE}, $fh, $offset);
+	my @args = @_;
+	$args[1] = qualify_to_ref($args[1]);
+	&File::Map::map_handle(@args);
+	return 1;
 }
 
-sub map_file(\$@) {
-	my ($var_ref, $filename, $mode, $offset, $length) = @_;
-	$mode   ||= '<';
-	$offset ||= 0;
-	open my $fh, $mode, $filename or croak "Couldn't open file $filename: $!";
-	$length ||= (-s $fh) - $offset;
-	my $ret = sys_map($var_ref, $length, $protection_for{$mode}, $MAP_CONSTANTS{MAP_SHARED} | $MAP_CONSTANTS{MAP_FILE}, $fh, $offset);
-	close $fh or croak "Couldn't close $filename: $!";
-	return $ret;
-}
-
-sub map_anonymous(\$@) {
-	my ($var_ref, $length) = @_;
-	croak 'Zero length specified for anonymous map' if $length == 0;
-	return sys_map($var_ref, $length, $MAP_CONSTANTS{PROT_READ} | $MAP_CONSTANTS{PROT_WRITE}, $MAP_CONSTANTS{MAP_ANONYMOUS} | $MAP_CONSTANTS{MAP_SHARED});
-}
-
-sub sys_map(\$$$$*;$) {    ## no critic ProhibitManyArgs
-	my ($var_ref, $length, $protection, $flags, $glob, $offset) = @_;
-	my $fd = $flags & $MAP_CONSTANTS{MAP_ANONYMOUS} ? -1 : fileno qualify_to_ref($glob, caller);
-	$offset ||= 0;
-	return eval { _mmap_impl($var_ref, $length, $protection, $flags, $fd, $offset) } || do {
-		$@ =~ s/\n\z//mx;
-		croak $@;
+for my $subname (qw/map_file map_anonymous sys_map unmap sync pin unpin advise/, ( defined &File::Map::remap ? 'remap' : ())) {
+	no strict 'refs';
+	*{$subname} = sub {
+		&{"File::Map::$subname"}(@_);
+		return 1;
 	};
+	set_prototype(\&{$subname}, prototype \&{"File::Map::$subname"});
+}
+
+if (defined &File::Map::wait_until) {
+	*wait_until = sub(&) {
+		my $block = shift;
+		return File::Map::wait_until(\&$block, $_);
+	};
+	*notify = sub() {
+		File::Map::notify $_;
+	};
+	*broadcast = sub() {
+		File::Map::broadcast $_;
+	};
+	
+	for my $array($EXPORT_TAGS{lock}, \@EXPORT_OK) {
+		push @{$array}, qw/wait_until notify broadcast/;
+	}
 }
 
 1;
@@ -95,7 +65,7 @@ Sys::Mmap::Simple - Memory mapping made simple and safe.
 
 =head1 VERSION
 
-Version 0.13
+Version 0.14
 
 =head1 SYNOPSIS
 
@@ -108,51 +78,7 @@ Version 0.13
 
 =head1 DESCRIPTION
 
-Sys::Mmap::Simple maps files or anonymous memory into perl variables.
-
-=head2 Advantages of memory mapping
-
-=over 4
-
-=item * Unlike normal perl variables, mapped memory is shared between threads or forked processes.
-
-=item * It is an efficient way to slurp an entire file. Unlike for example L<File::Slurp>, this module returns almost immediately, loading the pages lazily on access. This means you only 'pay' for the parts of the file you actually use.
-
-=item * Perl normally never returns memory to the system while running, mapped memory can be returned.
-
-=back
-
-=head2 Advantages of this module over other similar modules
-
-=over 4
-
-=item * Safety and Speed
-
-This module is safe yet fast. Alternatives are either fast but can cause segfaults or loose the mapping when not used correctly, or are safe but rather slow. Sys::Mmap::Simple is as fast as a normal string yet safe.
-
-=item * Simplicity
-
-It offers a simple interface targeted at common usage patterns
-
-=over 4
-
-=item * Files are mapped into a variable that can be read just like any other variable, and it can be written to using standard Perl techniques such as regexps and C<substr>.
-
-=item * Files can be mapped using a set of simple functions. There is no need to know weird constants or 6 arguments.
-
-=item * It will automatically unmap the file when the scalar gets destroyed. This works correctly even in multi-threaded programs.
-
-=back
-
-=item * Portability
-
-Sys::Mmap::Simple supports both POSIX systems and Windows.
-
-=item * Thread synchronization
-
-It has built-in support for thread synchronization. 
-
-=back
+B<This module is deprecated in favor of File::Map, its use is discouraged>. It's nothing more than a thin compatibility layer.
 
 =head1 FUNCTIONS
 
@@ -311,6 +237,8 @@ automatically be notified of progress on your bug as I make changes.
 =head1 SEE ALSO
 
 =over 4
+
+=item * L<File::Map>, the successor of this module
 
 =item * L<Sys::Mmap>, the original Perl mmap module
 
